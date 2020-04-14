@@ -1403,6 +1403,10 @@ bool SCREEN_INFORMATION::IsMaximizedY() const
     // Save cursor's relative height versus the viewport
     SHORT const sCursorHeightInViewportBefore = _textBuffer->GetCursor().GetPosition().Y - _viewport.Top();
 
+    // Tell the both the new and old buffer to not redraw its cursor as we reflow and swap them.
+    newTextBuffer->GetCursor().StartDeferDrawing();
+    _textBuffer->GetCursor().StartDeferDrawing();
+
     HRESULT hr = TextBuffer::Reflow(*_textBuffer.get(), *newTextBuffer.get(), std::nullopt, std::nullopt);
 
     if (SUCCEEDED(hr))
@@ -1416,6 +1420,10 @@ bool SCREEN_INFORMATION::IsMaximizedY() const
 
         _textBuffer.swap(newTextBuffer);
     }
+
+    // Only tell _textBuffer to EndDefer (and not newTextBuffer) because whether or not Reflow failed,
+    // _textBuffer will end up being the buffer that we use after returning.
+    _textBuffer->GetCursor().EndDeferDrawing();
 
     return NTSTATUS_FROM_HRESULT(hr);
 }
@@ -1662,6 +1670,19 @@ void SCREEN_INFORMATION::SetCursorDBMode(const bool DoubleCursor)
     {
         return STATUS_INVALID_PARAMETER;
     }
+
+    // In GH#5291, we experimented with manually breaking the line on all cursor
+    // movements here. As we print lines into the buffer, we mark lines as
+    // wrapped when we print the last cell of the row, not the first cell of the
+    // subsequent row (the row the first line wrapped onto).
+    //
+    // Logically, we thought that manually breaking lines when we move the
+    // cursor was a good idea. We however, did not have the time to fully
+    // validate that this was the correct answer, and a simpler solution for the
+    // bug on hand was found. Furthermore, we thought it would be a more
+    // comprehensive solution to only mark lines as wrapped when we print the
+    // first cell of the second row, which would require some WriteCharsLegacy
+    // work.
 
     cursor.SetPosition(Position);
 
